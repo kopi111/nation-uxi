@@ -1,0 +1,55 @@
+@using UX.Shared.Contracts
+
+<div class="mb-3">
+    <label class="form-label">@Label</label>
+    <select class="form-select" @onchange="OnSelectedNodeChanged" value="@SelectedNodeId">
+        <option value="">-- Select Node --</option>
+        @foreach (var node in _flattened)
+        {
+            <option value="@node.Id">@node.FullPath</option>
+        }
+    </select>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "Organization Node";
+    [Parameter] public Guid? SelectedNodeId { get; set; }
+    [Parameter] public EventCallback<Guid?> SelectedNodeIdChanged { get; set; }
+    [Parameter] public Func<OrgNodeDto, bool>? NodeFilter { get; set; }
+
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<OrgNodeDto> _tree = new();
+    private readonly List<OrgNodeDto> _flattened = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _tree = await Http.GetFromJsonAsync<List<OrgNodeDto>>("api/admin/orgnodes/tree") ?? new();
+        _flattened.Clear();
+        foreach (var n in _tree) Flatten(n, "");
+    }
+
+    private void Flatten(OrgNodeDto node, string prefix)
+    {
+        var thisPath = string.IsNullOrEmpty(prefix) ? node.Name : $"{prefix} / {node.Name}";
+        node.FullPath = thisPath;
+
+        if (NodeFilter?.Invoke(node) != false)
+            _flattened.Add(node);
+
+        foreach (var c in node.Children)
+            Flatten(c, thisPath);
+    }
+
+    private async Task OnSelectedNodeChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        SelectedNodeId = string.IsNullOrEmpty(value) ? null : Guid.Parse(value);
+        await SelectedNodeIdChanged.InvokeAsync(SelectedNodeId);
+    }
+}

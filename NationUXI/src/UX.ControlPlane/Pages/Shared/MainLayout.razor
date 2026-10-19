@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <span class="text-muted">UX Control Plane</span>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <Toasts @ref="_toasts" />
+</div>
+
+@code {
+    private Toasts? _toasts;
+
+    public void ShowToast(string message, string type = "info")
+        => _toasts?.ShowToast(message, type);
+}

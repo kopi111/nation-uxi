@@ -1,0 +1,225 @@
+@page "/admin/configassignments"
+@inject HttpClient Http
+@using UX.Shared.Contracts
+
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Config Assignments" Subtitle="Assign config profiles to OrgNodes or Agents" />
+
+<div class="row mb-3">
+    <div class="col">
+        <button class="btn btn-primary" @onclick="ShowCreateDialog">Create Assignment</button>
+        <button class="btn btn-secondary" @onclick="Load">Refresh</button>
+    </div>
+</div>
+
+@if (_isLoading)
+{
+    <div>Loading assignments...</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+            <tr>
+                <th>Scope</th>
+                <th>Scope Id</th>
+                <th>Scope Name</th>
+                <th>Profile</th>
+                <th>Priority</th>
+                <th>Effective From</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var a in _assignments)
+            {
+                <tr>
+                    <td>@a.ScopeType</td>
+                    <td class="font-monospace">@a.ScopeId</td>
+                    <td>@a.ScopeName</td>
+                    <td>@a.ConfigProfileName</td>
+                    <td>@a.Priority</td>
+                    <td>@(a.EffectiveFromUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(a.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Assignment</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Scope Type</label>
+                        <select class="form-select" @bind="_scopeType">
+                            <option value="OrgNode">OrgNode</option>
+                            <option value="Agent">Agent</option>
+                        </select>
+                    </div>
+
+                    @if (_scopeType == "OrgNode")
+                    {
+                        <OrgNodePicker @bind-SelectedNodeId="_scopeId" Label="Org Node" />
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Agent</label>
+                            <select class="form-select" @bind="_scopeId">
+                                <option value="">-- Select Agent --</option>
+                                @foreach (var a in _agents)
+                                {
+                                    <option value="@a.AgentId">@a.MachineName (@a.AgentId)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label">Config Profile</label>
+                        <select class="form-select" @bind="_profileId">
+                            <option value="">-- Select Profile --</option>
+                            @foreach (var p in _profiles)
+                            {
+                                <option value="@p.Id">@p.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Priority (lower wins)</label>
+                        <input class="form-control" type="number" @bind="_priority" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Effective From UTC (optional)</label>
+                        <input type="datetime-local" @bind-value="_effectiveFromLocal" @bind-value:format="yyyy-MM-ddTHH:mm" />
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_error))
+                    {
+                        <div class="alert alert-danger">@_error</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
+                    <button class="btn btn-primary" @onclick="Create" disabled="@_busy">@(_busy ? "Creating..." : "Create")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code{
+    private bool _isLoading = true;
+    private List<ConfigAssignmentDto> _assignments = new();
+
+    private bool _showDialog;
+    private string _scopeType = "OrgNode";
+    private Guid? _scopeId;
+    private Guid? _profileId;
+    private int _priority = 100;
+    private DateTime? _effectiveFromLocal;
+    private bool _busy;
+    private string _error = "";
+
+    private List<ConfigProfileDto> _profiles = new();
+    private List<AgentDto> _agents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        await LoadPickers();
+    }
+
+    private async Task LoadPickers()
+    {
+        _profiles = await Http.GetFromJsonAsync<List<ConfigProfileDto>>("api/admin/configprofiles") ?? new();
+        _agents = await Http.GetFromJsonAsync<List<AgentDto>>("api/admin/agents/list") ?? new();
+    }
+
+    private async Task Load()
+    {
+        _isLoading = true;
+        _assignments = await Http.GetFromJsonAsync<List<ConfigAssignmentDto>>("api/admin/configassignments") ?? new();
+        _isLoading = false;
+    }
+
+    private void ShowCreateDialog()
+    {
+        _scopeType = "OrgNode";
+        _scopeId = null;
+        _profileId = null;
+        _priority = 100;
+        _effectiveFromLocal = null;
+        _error = "";
+        _showDialog = true;
+    }
+
+    private void CloseDialog() => _showDialog = false;
+
+    private async Task Create()
+    {
+        if (!_scopeId.HasValue)
+        {
+            _error = "Please choose a scope id.";
+            return;
+        }
+        if (!_profileId.HasValue)
+        {
+            _error = "Please choose a config profile.";
+            return;
+        }
+
+        _busy = true;
+        _error = "";
+
+        try
+        {
+            DateTime? effectiveFromUtc = _effectiveFromLocal?.ToUniversalTime();
+
+            var req = new CreateConfigAssignmentRequest
+            {
+                ScopeType = _scopeType,
+                ScopeId = _scopeId.Value,
+                ConfigProfileId = _profileId.Value,
+                Priority = _priority,
+                EffectiveFromUtc = effectiveFromUtc
+            };
+
+            var resp = await Http.PostAsJsonAsync("api/admin/configassignments", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await resp.Content.ReadAsStringAsync();
+                return;
+            }
+
+            _showDialog = false;
+            await Load();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Delete(Guid id)
+    {
+        await Http.DeleteAsync($"api/admin/configassignments/{id}");
+        await Load();
+    }
+}

@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Build
+[Dd]ebug/
+[Rr]elease/
+x64/
+build/
+
+## SQL Server localdb
+*.mdf
+*.ldf
+
+## Local configuration
+appsettings.Development.json

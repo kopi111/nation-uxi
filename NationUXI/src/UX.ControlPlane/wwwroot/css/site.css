@@ -1,0 +1,12 @@
+:root{ --sidebar-width: 240px; }
+html, body { height: 100%; }
+.page { display: flex; min-height: 100vh; }
+.sidebar { width: var(--sidebar-width); background: #1f2937; color: white; }
+.sidebar .nav-link { color: rgba(255,255,255,.85); }
+.sidebar .nav-link.active { color: white; font-weight: 600; }
+main { flex: 1; }
+.top-row { display:flex; align-items:center; height: 3.5rem; border-bottom: 1px solid #e5e7eb; }
+.content { padding-top: 1rem; }
+.nav-scrollable { overflow-y: auto; height: calc(100vh - 3.5rem); }
+.tree-view { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+.font-monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }

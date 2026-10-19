@@ -1,0 +1,63 @@
+<div class="toast-container">
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast show @GetToastClass(toast.Type)" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">@GetToastTitle(toast.Type)</strong>
+                <small>@toast.Time.ToShortTimeString()</small>
+                <button type="button" class="btn-close" @onclick="() => RemoveToast(toast.Id)"></button>
+            </div>
+            <div class="toast-body">
+                @toast.Message
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private class ToastItem
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Message { get; set; } = string.Empty;
+        public string Type { get; set; } = "info";
+        public DateTime Time { get; set; } = DateTime.Now;
+    }
+
+    private readonly List<ToastItem> _toasts = new();
+    private readonly TimeSpan _toastLifetime = TimeSpan.FromSeconds(5);
+
+    public void ShowToast(string message, string type = "info")
+    {
+        var toast = new ToastItem { Message = message, Type = type };
+        _toasts.Add(toast);
+        StateHasChanged();
+
+        _ = Task.Delay(_toastLifetime).ContinueWith(_ => InvokeAsync(() => RemoveToast(toast.Id)));
+    }
+
+    private void RemoveToast(Guid id)
+    {
+        var toast = _toasts.FirstOrDefault(t => t.Id == id);
+        if (toast != null)
+        {
+            _toasts.Remove(toast);
+            StateHasChanged();
+        }
+    }
+
+    private static string GetToastClass(string type) => type switch
+    {
+        "success" => "bg-success text-white",
+        "error" => "bg-danger text-white",
+        "warning" => "bg-warning",
+        _ => "bg-info text-white"
+    };
+
+    private static string GetToastTitle(string type) => type switch
+    {
+        "success" => "Success",
+        "error" => "Error",
+        "warning" => "Warning",
+        _ => "Info"
+    };
+}

@@ -1,0 +1,233 @@
+@page "/admin/configprofiles"
+@inject HttpClient Http
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Configuration Profiles" Subtitle="Manage agent configuration templates" />
+
+<div class="row mb-3">
+    <div class="col">
+        <button class="btn btn-primary" @onclick="ShowCreateDialog">Create New Profile</button>
+        <button class="btn btn-secondary" @onclick="LoadProfiles">Refresh</button>
+    </div>
+</div>
+
+@if (_isLoading)
+{
+    <div class="text-center">Loading profiles...</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Created</th>
+                    <th>Created By</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var profile in _profiles)
+                {
+                    <tr>
+                        <td>@profile.Name</td>
+                        <td>@profile.Description</td>
+                        <td>@profile.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@profile.CreatedBy</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" @onclick="() => EditProfile(profile)">Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editingProfile == null ? "Create" : "Edit") Profile</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" @bind="_profileName" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" @bind="_profileDescription" rows="2"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Configuration JSON</label>
+                        <textarea class="form-control font-monospace" @bind="_profileConfigJson" rows="10"></textarea>
+                    </div>
+
+                    @if (_validationErrors.Any())
+                    {
+                        <div class="alert alert-danger">
+                            <ul class="mb-0">
+                                @foreach (var error in _validationErrors)
+                                {
+                                    <li>@error</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="alert alert-danger">@_errorMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="ValidateConfig">Validate</button>
+                    <button class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveProfile" disabled="@_isSaving">
+                        @(_isSaving ? "Saving..." : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<ConfigProfileDto> _profiles = new();
+    private bool _isLoading = true;
+    private bool _showDialog;
+    private ConfigProfileDto? _editingProfile;
+
+    private string _profileName = "";
+    private string _profileDescription = "";
+    private string _profileConfigJson = GetDefaultConfigJson();
+    private List<string> _validationErrors = new();
+    private bool _isSaving;
+    private string _errorMessage = "";
+
+    protected override async Task OnInitializedAsync() => await LoadProfiles();
+
+    private async Task LoadProfiles()
+    {
+        _isLoading = true;
+        try
+        {
+            _profiles = await Http.GetFromJsonAsync<List<ConfigProfileDto>>("api/admin/configprofiles") ?? new();
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowCreateDialog()
+    {
+        _editingProfile = null;
+        _profileName = "";
+        _profileDescription = "";
+        _profileConfigJson = GetDefaultConfigJson();
+        _validationErrors.Clear();
+        _errorMessage = "";
+        _showDialog = true;
+    }
+
+    private void EditProfile(ConfigProfileDto profile)
+    {
+        _editingProfile = profile;
+        _profileName = profile.Name;
+        _profileDescription = profile.Description ?? "";
+        _profileConfigJson = profile.ConfigJson;
+        _validationErrors.Clear();
+        _errorMessage = "";
+        _showDialog = true;
+    }
+
+    private void CloseDialog() => _showDialog = false;
+
+    private async Task ValidateConfig()
+    {
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/admin/configprofiles/validate", _profileConfigJson);
+            var result = await response.Content.ReadFromJsonAsync<ValidateConfigResultDto>();
+
+            if (result?.IsValid == true)
+                _validationErrors.Clear();
+            else
+                _validationErrors = result?.Errors ?? new List<string>();
+        }
+        catch (Exception ex)
+        {
+            _validationErrors = new List<string> { $"Validation failed: {ex.Message}" };
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        _isSaving = true;
+        _errorMessage = "";
+        _validationErrors.Clear();
+
+        try
+        {
+            var request = new CreateConfigProfileRequest
+            {
+                Name = _profileName,
+                Description = _profileDescription,
+                ConfigJson = _profileConfigJson
+            };
+
+            HttpResponseMessage response;
+            if (_editingProfile == null)
+                response = await Http.PostAsJsonAsync("api/admin/configprofiles", request);
+            else
+                response = await Http.PutAsJsonAsync($"api/admin/configprofiles/{_editingProfile.Id}", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                CloseDialog();
+                await LoadProfiles();
+            }
+            else
+            {
+                _errorMessage = await response.Content.ReadAsStringAsync();
+            }
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static string GetDefaultConfigJson()
+    {
+        var defaultConfig = new
+        {
+            pullConfigEverySeconds = 60,
+            enableInventory = true,
+            inventoryIntervalMinutes = 60,
+            ingest = new { url = "https://ux-ingest/api/ingest/metrics", tokenTtlHint = "900s" },
+            wifiPolicy = new
+            {
+                mode = "single",
+                primaryAdapterId = "auto",
+                secondaryAdapterId = "auto",
+                secondaryRole = "scanTelemetry",
+                scanCadenceSeconds = 120
+            },
+            targets = Array.Empty<object>()
+        };
+
+        return System.Text.Json.JsonSerializer.Serialize(defaultConfig, JsonOptions.Indented);
+    }
+}

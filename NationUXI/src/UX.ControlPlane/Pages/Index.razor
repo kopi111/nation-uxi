@@ -1,0 +1,45 @@
+@page "/"
+@inject HttpClient Http
+@using UX.Shared.Contracts
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Dashboard" Subtitle="Quick system status" />
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Agents</h5>
+                <div class="display-6">@_agentCount</div>
+                <div class="text-muted">Total registered</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Recent Audit Events</h5>
+                <div class="display-6">@_auditCount</div>
+                <div class="text-muted">Last load</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-secondary" @onclick="Load">Refresh</button>
+
+@code {
+    private int _agentCount;
+    private int _auditCount;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var agents = await Http.GetFromJsonAsync<List<AgentDto>>("api/admin/agents/list") ?? new();
+        _agentCount = agents.Count;
+
+        var audits = await Http.GetFromJsonAsync<List<object>>("api/admin/audit/latest?take=50") ?? new();
+        _auditCount = audits.Count;
+    }
+}

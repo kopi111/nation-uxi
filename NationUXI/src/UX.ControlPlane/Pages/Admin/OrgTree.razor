@@ -1,0 +1,147 @@
+@page "/admin/orgtree"
+@inject HttpClient Http
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Organization Tree" Subtitle="Manage organizational hierarchy" />
+
+<div class="row mb-3">
+    <div class="col">
+        <button class="btn btn-primary" @onclick="ShowCreateDialog">Create New Node</button>
+        <button class="btn btn-secondary" @onclick="LoadTree">Refresh</button>
+    </div>
+</div>
+
+@if (_isLoading)
+{
+    <div class="text-center">Loading organization tree...</div>
+}
+else
+{
+    <div class="tree-view">
+        @foreach (var node in _tree)
+        {
+            <OrgTreeNode Node="node" Level="0" OnNodeUpdated="LoadTree" />
+        }
+    </div>
+}
+
+@if (_showCreateDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Organization Node</h5>
+                    <button type="button" class="btn-close" @onclick="CloseCreateDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" @bind="_newNodeName" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Node Type</label>
+                        <select class="form-select" @bind="_newNodeType">
+                            <option value="@OrgNodeType.Area">Area</option>
+                            <option value="@OrgNodeType.Division">Division</option>
+                            <option value="@OrgNodeType.Station">Station</option>
+                            <option value="@OrgNodeType.Unit">Unit</option>
+                        </select>
+                    </div>
+
+                    <OrgNodePicker @bind-SelectedNodeId="_newNodeParentId"
+                                   Label="Parent Node (Optional)" />
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="alert alert-danger">@_errorMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseCreateDialog">Cancel</button>
+                    <button class="btn btn-primary" @onclick="CreateNode" disabled="@_isCreating">
+                        @(_isCreating ? "Creating..." : "Create")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<OrgNodeDto> _tree = new();
+    private bool _isLoading = true;
+    private bool _showCreateDialog;
+    private string _newNodeName = "";
+    private OrgNodeType _newNodeType = OrgNodeType.Area;
+    private Guid? _newNodeParentId;
+    private bool _isCreating;
+    private string _errorMessage = "";
+
+    protected override async Task OnInitializedAsync() => await LoadTree();
+
+    private async Task LoadTree()
+    {
+        _isLoading = true;
+        try
+        {
+            _tree = await Http.GetFromJsonAsync<List<OrgNodeDto>>("api/admin/orgnodes/tree") ?? new();
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowCreateDialog()
+    {
+        _newNodeName = "";
+        _newNodeType = OrgNodeType.Area;
+        _newNodeParentId = null;
+        _errorMessage = "";
+        _showCreateDialog = true;
+    }
+
+    private void CloseCreateDialog() => _showCreateDialog = false;
+
+    private async Task CreateNode()
+    {
+        if (string.IsNullOrWhiteSpace(_newNodeName))
+        {
+            _errorMessage = "Name is required";
+            return;
+        }
+
+        _isCreating = true;
+        _errorMessage = "";
+
+        try
+        {
+            var request = new CreateOrgNodeRequest
+            {
+                Name = _newNodeName,
+                NodeType = _newNodeType,
+                ParentId = _newNodeParentId
+            };
+
+            var response = await Http.PostAsJsonAsync("api/admin/orgnodes", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                CloseCreateDialog();
+                await LoadTree();
+            }
+            else
+            {
+                _errorMessage = await response.Content.ReadAsStringAsync();
+            }
+        }
+        finally
+        {
+            _isCreating = false;
+        }
+    }
+}

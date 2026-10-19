@@ -1,0 +1,149 @@
+@page "/admin/agents"
+@inject HttpClient Http
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Agents" Subtitle="Register, assign, and inspect agent status" />
+
+<div class="mb-3">
+    <button class="btn btn-secondary" @onclick="Load">Refresh</button>
+</div>
+
+@if (_isLoading)
+{
+    <div>Loading agents...</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+            <tr>
+                <th>Machine</th>
+                <th>Agent Id</th>
+                <th>Org Path</th>
+                <th>Last Seen (UTC)</th>
+                <th>CanSend</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var a in _agents)
+            {
+                <tr>
+                    <td>@a.MachineName</td>
+                    <td class="font-monospace">@a.AgentId</td>
+                    <td>@a.OrgNodePath</td>
+                    <td>@a.LastSeenUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@a.CanSend</td>
+                    <td>@a.Status</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary me-2" @onclick="() => OpenAssign(a)">Assign</button>
+                        <button class="btn btn-sm btn-outline-success me-2" @onclick="() => Toggle(a, true)">Enable Send</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Toggle(a, false)">Disable Send</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showAssign && _selected != null)
+{
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Assign Agent</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAssign"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2"><strong>@_selected.MachineName</strong></div>
+                    <OrgNodePicker @bind-SelectedNodeId="_selectedOrgNodeId" Label="Target Org Node" />
+                    <div class="mb-3">
+                        <label class="form-label">Assigned User (optional)</label>
+                        <input class="form-control" @bind="_assignedUser" />
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_error))
+                    {
+                        <div class="alert alert-danger">@_error</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseAssign">Cancel</button>
+                    <button class="btn btn-primary" @onclick="Assign" disabled="@_busy">@(_busy ? "Assigning..." : "Assign")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<AgentDto> _agents = new();
+    private bool _isLoading = true;
+
+    private bool _showAssign;
+    private AgentDto? _selected;
+    private Guid? _selectedOrgNodeId;
+    private string? _assignedUser;
+    private bool _busy;
+    private string _error = "";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _isLoading = true;
+        _agents = await Http.GetFromJsonAsync<List<AgentDto>>("api/admin/agents/list") ?? new();
+        _isLoading = false;
+    }
+
+    private void OpenAssign(AgentDto agent)
+    {
+        _selected = agent;
+        _selectedOrgNodeId = null;
+        _assignedUser = agent.AssignedUser;
+        _error = "";
+        _showAssign = true;
+    }
+
+    private void CloseAssign() => _showAssign = false;
+
+    private async Task Assign()
+    {
+        if (_selected == null) return;
+        if (!_selectedOrgNodeId.HasValue)
+        {
+            _error = "Please select an organization node.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var req = new AssignAgentRequest { AgentId = _selected.AgentId, OrgNodeId = _selectedOrgNodeId.Value, AssignedUser = _assignedUser };
+            var resp = await Http.PostAsJsonAsync($"api/admin/agents/{_selected.AgentId}/assign", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await resp.Content.ReadAsStringAsync();
+                return;
+            }
+
+            _showAssign = false;
+            await Load();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Toggle(AgentDto agent, bool canSend)
+    {
+        var req = new ToggleCanSendRequest { AgentId = agent.AgentId, CanSend = canSend };
+        await Http.PostAsJsonAsync($"api/admin/agents/{agent.AgentId}/cansend", req);
+        await Load();
+    }
+}

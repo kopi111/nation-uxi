@@ -1,0 +1,72 @@
+@page "/admin/auditlog"
+@inject HttpClient Http
+@using UX.ControlPlane.Components.Admin
+
+<PageHeader Title="Audit Log" Subtitle="Recent admin and system actions" />
+
+<div class="mb-3">
+    <button class="btn btn-secondary" @onclick="Load">Refresh</button>
+</div>
+
+@if (_isLoading)
+{
+    <div>Loading audit log...</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-sm">
+            <thead>
+            <tr>
+                <th>UTC</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>EntityId</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>@r.Utc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@r.Actor</td>
+                    <td>@r.Action</td>
+                    <td>@r.Entity</td>
+                    <td class="font-monospace">@r.EntityId</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+
+    private List<Row> _rows = new();
+
+    private record Row(DateTime Utc, string Actor, string Action, string Entity, string EntityId);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _isLoading = true;
+        try
+        {
+            var raw = await Http.GetFromJsonAsync<List<Dictionary<string, object>>>("api/admin/audit/latest?take=100") ?? new();
+            _rows = raw.Select(d => new Row(
+                DateTime.Parse(d["utc"].ToString() ?? DateTime.UtcNow.ToString("O")),
+                d["actor"]?.ToString() ?? "",
+                d["action"]?.ToString() ?? "",
+                d["entity"]?.ToString() ?? "",
+                d["entityId"]?.ToString() ?? ""
+            )).ToList();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

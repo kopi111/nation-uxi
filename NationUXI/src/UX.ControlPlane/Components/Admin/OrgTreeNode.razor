@@ -1,0 +1,39 @@
+@using UX.Shared.Contracts
+
+<div class="tree-node" style="margin-left: @(Level * 20)px">
+    <div class="d-flex align-items-center py-1">
+        <button class="btn btn-sm btn-link p-0 me-2" @onclick="ToggleExpand">
+            @(IsExpanded ? "▼" : "▶")
+        </button>
+        <span class="badge @GetNodeTypeClass() me-2">@Node.NodeType</span>
+        <span class="fw-bold">@Node.Name</span>
+    </div>
+
+    @if (IsExpanded && Node.Children.Any())
+    {
+        @foreach (var child in Node.Children)
+        {
+            <OrgTreeNode Node="child" Level="@(Level + 1)" OnNodeUpdated="OnNodeUpdated" />
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public OrgNodeDto Node { get; set; } = new();
+    [Parameter] public int Level { get; set; }
+    [Parameter] public EventCallback OnNodeUpdated { get; set; }
+
+    private bool IsExpanded { get; set; } = true;
+
+    private void ToggleExpand() => IsExpanded = !IsExpanded;
+
+    private string GetNodeTypeClass() => Node.NodeType switch
+    {
+        OrgNodeType.National => "bg-primary",
+        OrgNodeType.Area => "bg-success",
+        OrgNodeType.Division => "bg-info",
+        OrgNodeType.Station => "bg-warning",
+        OrgNodeType.Unit => "bg-secondary",
+        _ => "bg-dark"
+    };
+}
